@@ -15315,7 +15315,12 @@ local cosmetic_state = require(local_player.PlayerScripts.Modules.UserInterface.
 local cosmetic_inventory = player_data_controller:Get('CosmeticInventory');
 local finisher = require(local_player.PlayerScripts.Modules.UserInterface.Equipment.Scene.FinisherPlayer);
 local local_fighter = fighter_controller.LocalFighter;
-local in_match = local_fighter:Get("IsInDuel") == true;
+-- EXECUTE FIX: LocalFighter is nil on early execute -> :Get threw and killed
+-- the whole file. guarded now, live-gated where used.
+local in_match = false;
+pcall(function()
+    in_match = local_fighter and local_fighter:Get("IsInDuel") == true;
+end);
 -- shared duels gate: combat suite only runs inside a duel
 getgenv().elisium_in_duel = function()
     local ok, v = pcall(function()
