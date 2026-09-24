@@ -21437,6 +21437,17 @@ do
                         rep.AssemblyLinearVelocity = Vector3.zero;
                         rep.RotVelocity = Vector3.zero;
                     end);
+                else
+                    -- nil plant (Underground under high floor, Camera with no
+                    -- cam, unknown mode): NEVER leave a stale teleport. track
+                    -- the CURRENT target with the plain xyz offset instead.
+                    self.server = targetPos + Vector3.new(ELI.ragebot.x, ELI.ragebot.y, ELI.ragebot.z);
+                    pcall(function()
+                        local rep = self.fighter.Entity.RootPart;
+                        rep.CFrame = CFrame.new(self.server);
+                        rep.AssemblyLinearVelocity = Vector3.zero;
+                        rep.RotVelocity = Vector3.zero;
+                    end);
                 end;
                 return
             end;
@@ -21804,6 +21815,11 @@ do
                             or pp.Y < -420 or pp.Y > 5000
                             or math.abs(pp.X) > 9000 or math.abs(pp.Z) > 9000;
                         if not bad then plantPos = pp end;
+                    end;
+                    -- nil/bad plant: same xyz fallback so the shot tracks the
+                    -- CURRENT target instead of a stale plant or home.
+                    if not plantPos then
+                        plantPos = troot.Position + Vector3.new(ELI.ragebot.x, ELI.ragebot.y, ELI.ragebot.z);
                     end;
                 end;
             end;
