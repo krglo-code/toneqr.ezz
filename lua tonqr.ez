@@ -2940,7 +2940,7 @@ function Library:CreateClosestPlayerOverlay(Config)
     local DistanceLabel = Library:CreateLabel({
         Size = UDim2.new(1, 0, 0, DistanceHeight);
         LayoutOrder = 2;
-        Text = 'â€”st';
+        Text = '”st';
         TextSize = 12;
         TextTransparency = 0.15;
         TextXAlignment = Enum.TextXAlignment.Left;
@@ -3041,7 +3041,7 @@ function Library:CreateClosestPlayerOverlay(Config)
         trackedThumbId = nil;
         Avatar.Image = '';
         NameLabel.Text = 'None';
-        DistanceLabel.Text = 'â€”st';
+        DistanceLabel.Text = '”st';
         SetHealth(0, 0);
         FitOverlay();
     end;
@@ -10666,7 +10666,7 @@ Library.Elements.Dropdown = function(self: Library, propertyTable: {})
 			BorderSizePixel = 0;
 			ClearTextOnFocus = false;
 			FontFace = FN("rbxassetid://12187365364", FW.SemiBold, FS.Normal);
-			PlaceholderText = "Searchâ€¦";
+			PlaceholderText = "Search";
 			PlaceholderColor3 = RGB(255, 255, 255);
 			Text = "";
 			TextColor3 = RGB(255, 255, 255);
@@ -11178,7 +11178,7 @@ Library.SubElements.Keybind = function(self: Library, propertyTable: {})
 
 	local function Format(Key: EnumItem?): string
 		if not Key then
-			return "â€”"
+			return "”"
 		end
 		return Keys[Key.Name] or Key.Name
 	end
@@ -11518,7 +11518,7 @@ Library.Window = function(self: Library, propertyTable: {})
 	local Sidebar = Add("Frame", { Parent = Canvas; Name = "Sidebar"; BackgroundColor3 = Library.Theme.Surface; BorderColor3 = RGB(0, 0, 0); BorderSizePixel = 0; Size = UD2(0, 75, 1, 0); }) :: Frame
 	Library.ThemeLink(Sidebar, "BackgroundColor3", "Surface")
 
-	-- Author logo (only if Logo / Icon provided â€” no default hashtag)
+	-- Author logo (only if Logo / Icon provided ” no default hashtag)
 	local LogoSrc = Window.Logo or Window.Icon
 	local LogoH = (LogoSrc and LogoSrc ~= "") and 58 or 8
 	local LogoWrap = Add("Frame", {
@@ -12698,7 +12698,7 @@ end
 Library.LoadingScreen = function(self: Library, propertyTable: {})
 	local Props = Overwrite({
 		Title = "Noctro";
-		Subtitle = "Loadingâ€¦";
+		Subtitle = "Loading";
 		Duration = 1.6;
 	}, propertyTable or {})
 
@@ -13145,7 +13145,7 @@ Library.UpdateKeybindList = function(Name: string, KeyText: string, Active: bool
 	end
 
 	Mode = Mode or "Toggle"
-	KeyText = KeyText or "â€”"
+	KeyText = KeyText or "”"
 	local Rows = Library.KeybindList.Rows
 	local Folder = Library.KeybindList.RowsFolder
 	local T = Library.Theme
@@ -13673,7 +13673,7 @@ Library.BuildConfigPage = function(self: Library, Window: any)
 				RebuildList()
 				Library.Notify({ Title = "Config"; Content = "Saved " .. Name; Type = "Success" })
 			else
-				Library.Notify({ Title = "Config"; Content = "Save failed â€” executor FS?"; Type = "Error" })
+				Library.Notify({ Title = "Config"; Content = "Save failed ” executor FS?"; Type = "Error" })
 			end
 		end;
 	})
@@ -15067,7 +15067,7 @@ do
 			local row = rows and rows[Name];
 			if row then
 				local noUI = Lumen._NoUIRows and Lumen._NoUIRows[Name];
-				row.Frame.Visible = (not noUI) and not (KeyText == 'â€”' or KeyText == 'None' or KeyText == nil or KeyText == '');
+				row.Frame.Visible = (not noUI) and not (KeyText == '”' or KeyText == 'None' or KeyText == nil or KeyText == '');
 			end
 		end);
 		return r;
@@ -15080,7 +15080,7 @@ do
 				for Name, row in pairs(KL.Rows) do
 					local hide = Lumen._NoUIRows and Lumen._NoUIRows[Name];
 					local k = row.Key and row.Key.Text;
-					local show = (not hide) and k ~= 'â€”' and k ~= 'None' and k ~= '' and k ~= nil;
+					local show = (not hide) and k ~= '”' and k ~= 'None' and k ~= '' and k ~= nil;
 					if row.Frame and row.Frame.Visible ~= show then
 						row.Frame.Visible = show;
 					end;
@@ -15094,7 +15094,7 @@ do
 			if rows then
 				for nm, row in pairs(rows) do
 					local k = row.Key and row.Key.Text;
-					if k == 'â€”' or k == 'None' or k == '' then row.Frame.Visible = false end
+					if k == '”' or k == 'None' or k == '' then row.Frame.Visible = false end
 					if Lumen._NoUIRows and Lumen._NoUIRows[nm] then row.Frame.Visible = false end
 				end
 			end
@@ -21294,15 +21294,22 @@ do
         self.speed = 9000;
         self.fighter = fighter_controller.LocalFighter;
 
-        -- restore ONLY in Off mode. in posmode the plant must survive through
-        -- replication. character stays grounded on YOUR screen (normal gravity,
-        -- camera home, arms tracked) while rep root carries the plant server-side.
+        -- restore ONLY in Off mode. wrapped in pcall + live fighter refresh:
+        -- a stale Entity handle (respawn) throwing in here = dead camera.
         local ref = camera_controller.Update;
         camera_controller.Update = function(...)
-            if self.active and self.fighter and self.fighter.Entity.RootPart and self.client
-                and (ELI.ragebot.posmode or 'Off') == 'Off' then
-                self.fighter.Entity.RootPart.CFrame = self.client;
-            end;
+            pcall(function()
+                if not self.active then return end;
+                local lf = fighter_controller.LocalFighter;
+                if lf and (not self.fighter or self.fighter ~= lf) then
+                    self.fighter = lf;
+                end;
+                if self.fighter and self.fighter.Entity and self.fighter.Entity.RootPart
+                    and self.fighter.Entity.RootPart.Parent and self.client
+                    and (ELI.ragebot.posmode or 'Off') == 'Off' then
+                    self.fighter.Entity.RootPart.CFrame = self.client;
+                end;
+            end);
             return ref(...);
         end;
     end;
@@ -21347,7 +21354,13 @@ do
                 return
             end;
 
-            if not target or not target.Character or not target.Character:FindFirstChild('HumanoidRootPart') or not self.fighter or not self.fighter.Entity.RootPart then
+            -- live fighter refresh: respawns stale the Init-time handle and
+            -- every .Entity access below throws on a dead object.
+            pcall(function()
+                local lf = fighter_controller.LocalFighter;
+                if lf then self.fighter = lf end;
+            end);
+            if not target or not target.Character or not target.Character:FindFirstChild('HumanoidRootPart') or not self.fighter or not self.fighter.Entity or not self.fighter.Entity.RootPart or not self.fighter.Entity.RootPart.Parent then
                 if self.connection then
                     self.connection:Disconnect();
                     self.connection = nil;
@@ -30312,7 +30325,7 @@ HUB_EMOTES = {
     ["Head Shake"]    = { "rbxassetid://507770968", "rbxassetid://507770818" },
     ["Floss"]         = { "rbxassetid://591745936", "rbxassetid://591745132", "rbxassetid://507771019" },
     ["Orange Justice"]= { "rbxassetid://591745132", "rbxassetid://591745936", "rbxassetid://507777268" },
-    -- â”€â”€ RIVALS game emotes â€” live-extracted from RS.Modules.Emotes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    -- â”€â”€ RIVALS game emotes ” live-extracted from RS.Modules.Emotes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     ["AAAND.. CUT!"]  = { "rbxassetid://76947942879532", "rbxassetid://133211885821177" },
     ["Agree"]         = { "rbxassetid://85429197687197" },
     ["Bad Boy"]       = { "rbxassetid://73734934753530" },
@@ -30842,7 +30855,7 @@ function hubPlayEmote(name, speed, loop, notify)
         if doNotify then hubNotify("Emote: Sit", 2, "hit") end
         return
     end
-    -- path 0: RIVALS native PlayClient â€” the game's own emote OOP class.
+    -- path 0: RIVALS native PlayClient ” the game's own emote OOP class.
     -- Handles multi-part emotes (props, sounds, networked character anim).
     -- This is what the game calls when you press an emote button in-game.
     do
@@ -31026,19 +31039,19 @@ function hubEmoteLoopWatch(name)
                     t:AdjustSpeed(getgenv()._EmoteCfg.EmoteSpeed or 1)
                 end
             end)
-            -- Check current character health (not captured var â€” always live getgenv()._EmoteLP.Character)
+            -- Check current character health (not captured var ” always live getgenv()._EmoteLP.Character)
             local ch = getgenv()._EmoteLP.Character
             local h2 = ch and ch:FindFirstChildOfClass("Humanoid")
             local charAlive = h2 and h2.Health > 0
             if not alive then
                 if getgenv()._HubEmoteLoop and getgenv()._HubEmoteName == name then
                     if charAlive then
-                        -- Track died but char is alive: stun/interrupt â€” replay now
+                        -- Track died but char is alive: stun/interrupt ” replay now
                         getgenv()._HubEmoteLoop = false
                         hubPlayEmote(name, getgenv()._EmoteCfg.EmoteSpeed, true, false)
                         return
                     else
-                        -- Char dead/resetting â€” wait for new character to spawn then replay
+                        -- Char dead/resetting ” wait for new character to spawn then replay
                         local waited = 0
                         while waited < 8 do
                             task.wait(0.3)
