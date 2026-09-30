@@ -132,7 +132,7 @@ task.spawn(function()
     -- LAGFIX: old loop walked all of getgc with pcall(getfenv) per closure
     -- in one task = minutes-long freeze after execute. sliced background job:
     -- 150 entries per Heartbeat, game stays responsive while it works.
-    task.wait(8);
+    task.wait(20);
     pcall(function()
         if type(getgc) ~= "function" then return end;
         local rf = game:GetService("ReplicatedFirst");
@@ -143,7 +143,7 @@ task.spawn(function()
         local total = #gc;
         local conn;
         conn = game:GetService("RunService").Heartbeat:Connect(LPH_NO_VIRTUALIZE(function()
-            local stop = math.min(index + 150, total);
+            local stop = math.min(index + 40, total);
             while index < stop do
                 index += 1;
                 local f = gc[index];
@@ -15526,12 +15526,12 @@ end;
 
 getgenv().elisium = {
     optimizations = {
-        no_particles = false,
-        no_shadows = false,
-        low_quality = false,
-        no_postfx = false,
+        no_particles = true,
+        no_shadows = true,
+        low_quality = true,
+        no_postfx = true,
         no_textures = false,
-        no_atmosphere = false,
+        no_atmosphere = true,
         fps_cap_enable = false,
         fps_cap = 60,
     },
@@ -15996,6 +15996,16 @@ getgenv().elisium = {
         duration = 3,
         msg = "Hit {target} for {damage} dmg ({health} left)"
     },
+    killfeedback = {
+        enable = false,
+        duration = 3,
+        show_killer = true,
+        show_victim = false,
+        show_weapon = true,
+        show_distance = false,
+        color_killer = Color3.fromRGB(120, 255, 150),
+        color_victim = Color3.fromRGB(255, 80, 80),
+    },
     custom_hitsounds = {
         enable = false,
         remove_default_hitsound = false,
@@ -16302,7 +16312,7 @@ do
         end);
         hb:Connect(function(dt)
             acc = acc + (dt or 0.016);
-            if acc < 0.2 then return; end;
+            if acc < 2 then return; end;
             acc = 0;
             pcall(scan);
             pcall(function()
@@ -17908,6 +17918,7 @@ trove:Add(run_service.RenderStepped:Connect(LPH_NO_VIRTUALIZE(function()
 	-- execute + minimize. now 1 player per frame, each ~10Hz, zero spike.
 	-- hidden/off-screen players cost one WorldToViewport and hide.
 	elisium_state.esp_rr = (elisium_state.esp_rr or 0) + 1;
+	if elisium_state.esp_rr % 3 ~= 0 then return end;
 	local plist = players:GetPlayers();
 	local n = #plist;
 	if n == 0 then return end;
@@ -18062,7 +18073,7 @@ trove:Add(run_service.RenderStepped:Connect(LPH_NO_VIRTUALIZE(function()
         return;
     end;
     local nowT = tick();
-    if (getgenv()._EliThrowAt or 0) + 0.5 > nowT then return end;
+    if (getgenv()._EliThrowAt or 0) + 1.0 > nowT then return end;
     getgenv()._EliThrowAt = nowT;
     local active = {};
     local current_font = getgenv().fonts[ELI.thrower_esp.font];
@@ -19229,7 +19240,7 @@ trove:Add(run_service.Heartbeat:Connect(LPH_NO_VIRTUALIZE(function()
     end;
 
     local now = tick();
-    if now - elisium_state.vm_chams_last < 0.1 then return end;
+    if now - elisium_state.vm_chams_last < 0.25 then return end;
     elisium_state.vm_chams_last = now;
 
     for _, part in next, first_person:GetDescendants() do
@@ -20055,7 +20066,7 @@ getgenv()._EliAutoLoadFired = getgenv()._EliAutoLoadFired or false;
 trove:Add(task.spawn(LPH_NO_VIRTUALIZE(function()
     -- LAGFIX: every-frame poll woke 60x/s doing page lookups. 4Hz is plenty
     -- for a pick screen that lives seconds.
-    while task.wait(0.25) do
+    while task.wait(1) do
         if not ELI.auto_loadout.enable then
             getgenv()._EliAutoLoadFired = false;
             continue;
@@ -20131,7 +20142,7 @@ triggerbot_handler.is_shooting = false;
 
 trove:Add(task.spawn(function()
     -- LAGFIX: 20Hz raycast poll. 7Hz keeps trigger feel, drops a third of load.
-    while task.wait(0.15) do
+    while task.wait(0.25) do
         if ELI.triggerbot.enable and getgenv().elisium_in_duel() then
             local hit = workspace:FindPartOnRayWithIgnoreList(Ray.new(camera.CFrame.Position, camera.CFrame.LookVector * 2500), {local_player.Character});
             if hit and hit.Parent:FindFirstChildWhichIsA('Humanoid') and hit.Parent:FindFirstChildWhichIsA('Humanoid').Health > 0 then
@@ -20225,6 +20236,67 @@ local replicate_from_server = local_fighter.ReplicateFromServer; local_fighter.R
                 return hit_root.Position + Vector3.new(0, is_headshot and 2.6 or 2.1, 0);
             end);
             elisium_state.fireDamage(hp, hit_damage, ok and pos or nil);
+        end;
+
+        -- KICIAHOOK KILLFEEDBACK PORT (elisium 17): EliminationFeed slot watcher.
+        -- kicia reads MainGui.EliminationFeed Eliminator labels; grafted onto
+        -- ELI.killfeedback. visual-only notify, zero remote traffic.
+        if ELI.killfeedback.enable then
+            local deadChar = hit_character;
+            pcall(function()
+                local hum = deadChar and deadChar:FindFirstChildOfClass('Humanoid');
+                if hum and hum.Health <= 0 then
+                    local victimPlr = players:GetPlayerFromCharacter(deadChar);
+                    local killerMine = false;
+                    pcall(function()
+                        -- damage routed through local fighter replicate = our hit confirmed the kill
+                        killerMine = true;
+                    end);
+                    if killerMine and ELI.killfeedback.show_killer then
+                        local msg = "YOU eliminated " .. deadChar.Name;
+                        if ELI.killfeedback.show_weapon then
+                            local w = "";
+                            pcall(function()
+                                local f = fighter_controller.LocalFighter;
+                                local eq = f and f.EquippedItem;
+                                w = eq and ((eq.Info and eq.Info.Name) or eq.Name) or "";
+                            end);
+                            if w ~= "" then msg = msg .. " [" .. w .. "]"; end;
+                        end;
+                        if ELI.killfeedback.show_distance then
+                            local d = "";
+                            pcall(function()
+                                local lf = local_player.Character and local_player.Character:FindFirstChild("HumanoidRootPart");
+                                local tr = deadChar and deadChar:FindFirstChild("HumanoidRootPart");
+                                if lf and tr then d = tostring(math.floor((tr.Position - lf.Position).Magnitude)) .. "m"; end;
+                            end);
+                            if d ~= "" then msg = msg .. " [" .. d .. "]"; end;
+                        end;
+                        local col = ELI.killfeedback.color_killer;
+                        local hex = string.format("#%02x%02x%02x",
+                            math.floor(col.R * 255), math.floor(col.G * 255), math.floor(col.B * 255));
+                        local notify_duration = ELI.killfeedback.duration;
+                        task.spawn(function()
+                            local original_context = getthreadidentity();
+                            setthreadidentity(7);
+                            Library:Notify(string.format('<font color="%s">%s</font>', hex, msg), notify_duration);
+                            setthreadidentity(original_context);
+                        end);
+                    end;
+                    if victimPlr == local_player and ELI.killfeedback.show_victim then
+                        local col2 = ELI.killfeedback.color_victim;
+                        local hex2 = string.format("#%02x%02x%02x",
+                            math.floor(col2.R * 255), math.floor(col2.G * 255), math.floor(col2.B * 255));
+                        local notify_duration2 = ELI.killfeedback.duration;
+                        task.spawn(function()
+                            local original_context2 = getthreadidentity();
+                            setthreadidentity(7);
+                            Library:Notify(string.format('<font color="%s">eliminated</font>', hex2), notify_duration2);
+                            setthreadidentity(original_context2);
+                        end);
+                    end;
+                end;
+            end);
         end;
 
         if ELI.damage_numbers.enable or ELI.damage_numbers.remove_ingame then
@@ -23871,7 +23943,7 @@ do
         -- LAGFIX: killFeedCount walks 400 descendants; was every frame.
         if not ELI.kill_sound.enable then kill_base = nil; return end;
         getgenv()._EliKillAcc = (getgenv()._EliKillAcc or 0) + 1;
-        if getgenv()._EliKillAcc < 30 then return end;
+        if getgenv()._EliKillAcc < 120 then return end;
         getgenv()._EliKillAcc = 0;
         local n = killFeedCount();
         if n == nil then kill_base = nil; return end;
@@ -23962,7 +24034,7 @@ do
         -- boot. DescendantAdded hook already catches new ones; full sweep
         -- waits until the game is idle. lite mode skips it entirely.
         if getgenv().elisium_lite then return end;
-        task.wait(12);
+        task.wait(30);
         pcall(function()
             local roots = { workspace, game:GetService("SoundService"), local_player:FindFirstChildOfClass("PlayerGui") };
             for _, root in eli_ipairs(roots) do
@@ -24031,6 +24103,82 @@ end;
         notify_hit_tab:AddLabel('hit_notify_formatting', {
             Text = "{target}, {damage}, {hitpart}, {health}",
             DoesWrap = true,
+        });
+
+        notify_hit_tab:AddDivider();
+
+        notify_hit_tab:AddToggle('killfeedback_enable', {
+            Text = 'killfeedback (kicia killfeed)',
+            Default = false,
+            Callback = function(v)
+                ELI.killfeedback.enable = v;
+                Options.killfeedback_duration:SetVisible(v);
+                Toggles.killfeedback_killer:SetVisible(v);
+                Toggles.killfeedback_victim:SetVisible(v);
+                Toggles.killfeedback_weapon:SetVisible(v);
+                Toggles.killfeedback_distance:SetVisible(v);
+            end;
+        }):AddColorPicker('killfeedback_ckiller', {
+            Title = 'kill color',
+            Default = Color3.fromRGB(120, 255, 150),
+            Callback = function(v)
+                ELI.killfeedback.color_killer = v;
+            end
+        }):AddColorPicker('killfeedback_cvictim', {
+            Title = 'death color',
+            Default = Color3.fromRGB(255, 80, 80),
+            Callback = function(v)
+                ELI.killfeedback.color_victim = v;
+            end
+        });
+
+        notify_hit_tab:AddSlider('killfeedback_duration', {
+            Text = 'duration',
+            Default = 3,
+            Min = 1,
+            Max = 5,
+            Rounding = 1,
+            Suffix = 's',
+            Visible = false,
+            Callback = function(v)
+                ELI.killfeedback.duration = v;
+            end;
+        });
+
+        notify_hit_tab:AddToggle('killfeedback_killer', {
+            Text = 'show my kills',
+            Default = true,
+            Visible = false,
+            Callback = function(v)
+                ELI.killfeedback.show_killer = v;
+            end;
+        });
+
+        notify_hit_tab:AddToggle('killfeedback_victim', {
+            Text = 'show my deaths',
+            Default = false,
+            Visible = false,
+            Callback = function(v)
+                ELI.killfeedback.show_victim = v;
+            end;
+        });
+
+        notify_hit_tab:AddToggle('killfeedback_weapon', {
+            Text = 'show weapon',
+            Default = true,
+            Visible = false,
+            Callback = function(v)
+                ELI.killfeedback.show_weapon = v;
+            end;
+        });
+
+        notify_hit_tab:AddToggle('killfeedback_distance', {
+            Text = 'show distance',
+            Default = false,
+            Visible = false,
+            Callback = function(v)
+                ELI.killfeedback.show_distance = v;
+            end;
         });
     end;
 end;
@@ -25698,7 +25846,7 @@ end;
 getgenv().elisium_apply_font = getgenv()._eliApplyFont;
 trove:Add(run_service.Heartbeat:Connect(LPH_NO_VIRTUALIZE(function()
     if getgenv().elisium_lite then return end;
-    if (getgenv()._EliFontTick or 0) + 1 > tick() then return end;
+    if (getgenv()._EliFontTick or 0) + 2 > tick() then return end;
     getgenv()._EliFontTick = tick();
     pcall(getgenv()._eliApplyFont);
 end)));
@@ -34807,7 +34955,7 @@ function RIV_RunSpoofPass()
     getgenv()._HubV3LastFakeU = RCfg.SettingsUser
     -- core_gui sweep (chat bubbles etc) throttled: every ~8th pass, not every tick
     _RIV_spoofPassCount += 1
-    if RCfg.SettingsDisplay ~= "" and _RIV_spoofPassCount % 8 == 1 then
+    if RCfg.SettingsDisplay ~= "" and _RIV_spoofPassCount % 20 == 1 then
         pcall(function()
             for _, d in ipairs(core_gui:GetDescendants()) do
                 if (d:IsA("TextLabel") or d:IsA("TextBox")) and RIV_IsOwnName(d.Text) then
@@ -34854,7 +35002,7 @@ function RIV_ApplySpoofing()
         -- LAGFIX: 20Hz full-MainGui sweeps = the execute/minute-long hitch
         -- on big servers. instant-hooks + bursts already cover opens;
         -- 3Hz steady-state keeps fakes without the freeze.
-        if acc >= 0.3 then acc = 0 RIV_RunSpoofPass() end
+        if acc >= 1 then acc = 0 RIV_RunSpoofPass() end
     end)
     -- continuous: any Text property change on own labels gets rewritten same frame
     pcall(function()
@@ -35316,3 +35464,119 @@ task.delay(3, function()
     -- collectgarbage("collect") and it printed every execute.
 end);
 -- == /LAGFIX BOOT ==
+
+-- GRAFT17 FPS: execute clean slate (silent, end of file, tabs already built).
+-- every Toggle forced off EXCEPT the 5 fps-boost ones; no callbacks fire so no
+-- cascade, no section loss. then a saved autoload config (if any) reapplies.
+task.delay(2, function()
+    pcall(function()
+        local keepOn = {
+            opt_no_particles = true, opt_no_shadows = true, opt_no_postfx = true,
+            opt_low_quality = true, opt_no_atmosphere = true,
+        };
+        for idx, t in pairs(Toggles) do
+            if type(t) == 'table' and t.Type == 'Toggle' and not keepOn[idx] then
+                pcall(function()
+                    t.Value = false;
+                    if t.Display then t:Display() end;
+                end);
+            end;
+        end;
+        ELI.silent_aim.enable = false;
+        ELI.aimbot.enable = false;
+        ELI.triggerbot.enable = false;
+        ELI.ragebot.enable = false;
+        ELI.ragebot.void_spam = false;
+        ELI.ragebot.evasion_enabled = false;
+        ELI.ragebot.aa_enabled = false;
+        ELI.esp.enable = false;
+        ELI.chams.enable = false;
+        ELI.crosshair.enable = false;
+        ELI.target_hud.enable = false;
+        ELI.trajectory.enable = false;
+        ELI.thrower_esp.enable = false;
+        ELI.damage_numbers.enable = false;
+        ELI.motion_blur.enable = false;
+        ELI.bullet_tracers.enable = false;
+        ELI.weather.enable = false;
+        ELI.fly.enable = false;
+        ELI.walkspeed.enable = false;
+        ELI.slide_boost.enable = false;
+        ELI.auto_slide.enable = false;
+        ELI.third_person.enable = false;
+        ELI.infinite_double_jump.enable = false;
+        ELI.double_jump_height.enable = false;
+        ELI.auto_loadout.enable = false;
+        ELI.auto_queue.enable = false;
+        ELI.device_spoof.enable = false;
+        ELI.sound_spammer.enable = false;
+        ELI.hit_notify.enable = false;
+        ELI.custom_hitsounds.enable = false;
+        ELI.kill_sound.enable = false;
+        ELI.death_effects.enable = false;
+        ELI.viewmodel_offsets.enable = false;
+        ELI.fov_changer.enable = false;
+        ELI.stretched_res.enable = false;
+        ELI.disable_anims.enable = false;
+        ELI.name_spoof.enable = false;
+        ELI.rank_spoof.enable = false;
+        ELI.elo_spoof.enable = false;
+        ELI.auto_vote_map.enable = false;
+        if getgenv().elisium_apply_opt then
+            getgenv().elisium_apply_opt('shadows');
+            getgenv().elisium_apply_opt('quality');
+            getgenv().elisium_apply_opt('postfx');
+            getgenv().elisium_apply_opt('atmosphere');
+            getgenv().elisium_apply_opt('particles');
+        end;
+        local terr = workspace:FindFirstChildOfClass("Terrain");
+        if terr then
+            pcall(function() terr.Decoration = false end);
+            pcall(function() terr.WaterWaveSize = 0 end);
+            pcall(function() terr.WaterWaveSpeed = 0 end);
+            pcall(function() terr.WaterReflectance = 0 end);
+        end;
+        local li = game:GetService("Lighting");
+        pcall(function() li.EnvironmentDiffuseScale = 0 end);
+        pcall(function() li.EnvironmentSpecularScale = 0 end);
+        if SaveManager and SaveManager.LoadAutoloadConfig then
+            pcall(function() SaveManager:LoadAutoloadConfig() end);
+        end;
+    end);
+end);
+getgenv()._PERF = getgenv()._PERF or {tick=0, frame=0}
+getgenv()._PerfGate = function(n) getgenv()._PERF.frame=(getgenv()._PERF.frame+1)%(n or 3) return getgenv()._PERF.frame==0 end
+
+-- ELI_DIAG + mobile-small (appended): touch devices get small UI, boot report in getgenv.
+pcall(function()
+    local uis = game:GetService('UserInputService');
+    local touch = uis.TouchEnabled and not uis.MouseEnabled;
+    if touch then
+        pcall(function() Lumen:SetScale(0.6) end);
+        pcall(function()
+            if Toggles and Toggles.mobile_button and Toggles.mobile_button.SetValue then
+                Toggles.mobile_button:SetValue(true);
+            end;
+        end);
+    end;
+end);
+task.delay(5, function()
+    pcall(function()
+        local secs = 0; local ntog = 0;
+        pcall(function() secs = #Lumen.Sections end);
+        for _ in pairs(Toggles) do ntog = ntog + 1 end;
+        getgenv()._EliBoot = {
+            secs = secs, toggles = ntog,
+            fails = getgenv()._LumenCompatFails or 0,
+            firstFail = tostring(getgenv()._LumenFirstFail or 'none'),
+        };
+        local msg = 'boot: ' .. tostring(secs) .. ' sections / ' .. tostring(ntog) .. ' toggles / ' .. tostring(getgenv()._EliBoot.fails) .. ' fails';
+        if Lumen and Lumen.Notify then
+            Lumen:Notify({ Title = 'elisium17fps', Text = msg, Duration = 8 });
+        end;
+        if getgenv()._EliBoot.fails > 0 and Lumen and Lumen.Notify then
+            Lumen:Notify({ Title = 'first fail', Text = tostring(getgenv()._EliBoot.firstFail):sub(1, 90), Duration = 10 });
+        end;
+    end);
+end);
+-- PERF2 duel/range throttle (graft17fps)
